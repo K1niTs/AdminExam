@@ -1,0 +1,228 @@
+version: '3.9'
+
+services:
+  # GATEWAY SERVICE
+  gateway-service:
+    build:
+      context: ./gateway-service
+      dockerfile: Dockerfile
+    container_name: gateway-service
+    ports:
+      - "8080:8080"
+    depends_on:
+      - domain-service
+      - rabbitmq
+      - redis
+      - logstash
+    environment:
+      - grpc.server.host=domain-service
+      - grpc.server.port=9091
+      - spring.rabbitmq.host=rabbitmq
+      - spring.rabbitmq.port=5672
+      - spring.rabbitmq.username=admin
+      - spring.rabbitmq.password=password
+      - spring.data.redis.host=redis
+      - spring.data.redis.port=6379
+      - rabbitmq.exchange=reviewExchange
+      - rabbitmq.routing.key=reviewRoutingKey
+      - logging.file.name=/app/logs/gateway.log
+      - logging.level.root=INFO
+      - logging.level.org.example=DEBUG
+    volumes:
+      - ./gateway-service/logs:/app/logs
+    networks:
+      - app-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/actuator/health"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+
+  # OPENSEARCH
+  opensearch:
+    image: opensearchproject/opensearch:2.10.0
+    container_name: opensearch
+    environment:
+      - discovery.type=single-node
+      - bootstrap.memory_lock=true
+      - "OPENSEARCH_JAVA_OPTS=-Xms512m -Xmx512m"
+      - "DISABLE_SECURITY_PLUGIN=true"
+      - "DISABLE_INSTALL_DEMO_CONFIG=true"
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+    volumes:
+      - opensearch-data:/usr/share/opensearch/data
+    ports:
+      - "9200:9200"
+      - "9600:9600"
+    networks:
+      - app-network
+    healthcheck:
+      test: ["CMD-SHELL", "curl -s http://localhost:9200/_cluster/health | grep -q 'status.*green'"]
+      interval: 30s
+      timeout: 30s
+      retries: 3
+
+  # LOGSTASH
+  logstash:
+    image: opensearchproject/logstash-oss-with-opensearch-output-plugin:latest
+    container_name: logstash
+    volumes:
+      - ./logstash/logstash.conf:/usr/share/logstash/pipeline/logstash.conf:ro
+    ports:
+      - "5044:5044"
+      - "5000:5000"
+    environment:
+      - "LS_JAVA_OPTS=-Xms512m -Xmx512m"
+      - "OPENSEARCH_HOSTS=http://opensearch:9200"
+    networks:
+      - app-network
+    depends_on:
+      - opensearch
+
+  # KIBANA
+  kibana:
+    image: opensearchproject/opensearch-dashboards:2.10.0
+    container_name: kibana
+    ports:
+      - "5601:5601"
+    environment:
+      - 'OPENSEARCH_HOSTS=["http://opensearch:9200"]'
+      - "DISABLE_SECURITY_DASHBOARDS_PLUGIN=true"
+    networks:
+      - app-network
+    depends_on:
+      - opensearch
+
+  # DOMAIN SERVICE
+  domain-service:
+    build:
+      context: ./domain-service
+      dockerfile: Dockerfile
+    container_name: domain-service
+    ports:
+      - "9091:9091"
+    depends_on:
+      - rabbitmq
+      - mongo
+    environment:
+      - spring.data.mongodb.uri=mongodb://admin:admin@mongo:27017/reviewsdb?authSource=admin
+      - spring.data.mongodb.database=reviewsdb
+      - spring.rabbitmq.host=rabbitmq
+      - spring.rabbitmq.port=5672
+      - spring.rabbitmq.username=admin
+      - spring.rabbitmq.password=password
+    networks:
+      - app-network
+
+  # REDIS
+  redis:
+    image: redis:latest
+    container_name: redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    networks:
+      - app-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # RABBITMQ
+  rabbitmq:
+    image: rabbitmq:3-management
+    container_name: rabbitmq
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    environment:
+      - RABBITMQ_DEFAULT_USER=admin
+      - RABBITMQ_DEFAULT_PASS=password
+    networks:
+      - app-network
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "check_port_connectivity"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # MONGO
+  mongo:
+    image: mongo:latest
+    container_name: mongo
+    ports:
+      - "27017:27017"
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: admin
+      MONGO_INITDB_ROOT_PASSWORD: admin
+    volumes:
+      - ./mongo-init:/docker-entrypoint-initdb.d
+    networks:
+      - app-network
+
+    healthcheck:
+      test: ["CMD", "mongo", "--eval", "db.runCommand({ ping: 1 })"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # mongo-express (Если хотите использовать в качестве веб-интерфейса)
+  mongo-express:
+    image: mongo-express:latest
+    container_name: mongo-express
+    ports:
+      - "8081:8081"
+    environment:
+      - ME_CONFIG_MONGODB_SERVER=mongo
+      - ME_CONFIG_MONGODB_PORT=27017
+      - ME_CONFIG_MONGODB_ADMINUSERNAME=admin
+      - ME_CONFIG_MONGODB_ADMINPASSWORD=admin
+      - ME_CONFIG_BASICAUTH_USERNAME=admin
+      - ME_CONFIG_BASICAUTH_PASSWORD=admin
+    depends_on:
+      - mongo
+    networks:
+      - app-network
+
+  # PROMETHEUS
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+    networks:
+      - app-network
+    restart: always
+
+  # GRAFANA
+  grafana:
+    image: grafana/grafana:latest
+    container_name: grafana
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+    volumes:
+      - grafana-storage:/var/lib/grafana
+    networks:
+      - app-network
+    restart: always
+    depends_on:
+      - prometheus
+
+networks:
+  app-network:
+    driver: bridge
+
+volumes:
+  redis-data:
+  opensearch-data:
+  grafana-storage:

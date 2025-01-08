@@ -1,0 +1,57 @@
+syntax = "proto3";
+
+option java_package = "org.example.domainservice";
+option java_multiple_files = true;
+option java_outer_classname = "ReviewProto";
+
+package org.example.domainservice;
+
+service ReviewService {
+  rpc GetReview (GetReviewRequest) returns (ReviewResponse);
+  rpc CreateReview (CreateReviewRequest) returns (CreateReviewResponse);
+  rpc UpdateReview (UpdateReviewRequest) returns (UpdateReviewResponse);
+  rpc DeleteReview (DeleteReviewRequest) returns (DeleteReviewResponse);
+  rpc GetAllReviews (GetAllReviewsRequest) returns (GetAllReviewsResponse);
+}
+
+// Получить один отзыв
+message GetReviewRequest {
+  string id = 1;
+}
+message ReviewResponse {
+  string id = 1;
+  string client = 2;
+  int32 rating = 3;
+  string comment = 4;
+}
+// Создать отзыв
+message CreateReviewRequest {
+  string client = 1;
+  int32 rating = 2;
+  string comment = 3;
+}
+message CreateReviewResponse {
+  string id = 1;
+}
+// Обновить отзыв
+message UpdateReviewRequest {
+  string id = 1;
+  string client = 2;
+  int32 rating = 3;
+  string comment = 4;
+}
+message UpdateReviewResponse {
+  bool success = 1;
+}
+// Удалить отзыв
+message DeleteReviewRequest {
+  string id = 1;
+}
+message DeleteReviewResponse {
+  bool success = 1;
+}
+// Получить все отзывы
+message GetAllReviewsRequest {}
+message GetAllReviewsResponse {
+  repeated ReviewResponse reviews = 1;
+}
