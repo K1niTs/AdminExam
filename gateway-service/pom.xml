@@ -23,6 +23,7 @@
     </properties>
 
     <dependencies>
+
         <!-- gRPC -->
         <dependency>
             <groupId>io.grpc</groupId>
@@ -49,7 +50,11 @@
             <artifactId>protobuf-java</artifactId>
             <version>3.24.3</version>
         </dependency>
-
+        <dependency>
+            <groupId>net.logstash.logback</groupId>
+            <artifactId>logstash-logback-encoder</artifactId>
+            <version>7.4</version>
+        </dependency>
         <!-- RabbitMQ -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
